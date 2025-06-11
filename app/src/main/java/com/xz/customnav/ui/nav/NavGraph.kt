@@ -2,19 +2,17 @@ package com.xz.customnav.ui.nav
 
 
 import android.app.Activity
+import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.ViewModelStore
-import androidx.lifecycle.ViewModelStoreOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.compose.LocalViewModelStoreOwner
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
@@ -68,12 +66,8 @@ fun ScreenEntrance(navGraph: NavGraphViewModel, navController: NavController) {
 
         }
     }
+    AnimateDestination(destination = currentDestination)
 }
-
-class CustomViewModelStoreOwner(
-    override val viewModelStore: ViewModelStore
-) : ViewModelStoreOwner
-
 
 class NavGraphViewModel(
     val startRoute: String,
@@ -83,6 +77,7 @@ class NavGraphViewModel(
     private val navScreens = MutableStateFlow<List<NavScreen>>(emptyList())
     private val navDestinations = MutableStateFlow<List<NavDestination>>(emptyList())
 
+    private val destData = MutableSharedFlow<String?>()
 
     private val nameToIdMap = mutableMapOf<String, String>()
 
@@ -110,6 +105,8 @@ class NavGraphViewModel(
         setNavControllerNavigateFunc()
         setNavControllerPopBackFunc()
         setNavControllerPopBackDescFunc()
+        setNavControllerSavaDataFunc()
+        setNavControllerGetSavaDataFunc()
     }
 
     //设定导航构建者方法
@@ -127,21 +124,33 @@ class NavGraphViewModel(
 
     //导航方法
     private fun setNavControllerNavigateFunc() {
-        navController?.setNavigateFunc { route, direction, restore ->
-            val name = route::class.simpleName!!
+        navController?.setNavigateFunc { target, removeTarget, direction, restore ->
+            //移除导航前的页面
+            if (removeTarget != null) {
+                val destValues = navDestinations.value
+                val name = removeTarget::class.simpleName!!
+                val removeDest = destValues.find { it.name == name }
+                if (removeDest != null) {
+                    val index = destValues.indexOf(removeDest)
+                    navDestinations.update { it.take(index) }
+                }
+
+            }
+            val name = target::class.simpleName!!
             val navScreen = navScreens.value.find { it.name == name }
             if (navScreen == null) {
-                throw IllegalArgumentException("找不到$route")
+                throw IllegalArgumentException("找不到$target")
             }
             val id = if (restore) nameToIdMap[name] else UUID.randomUUID().toString()
             val destination = NavDestination(
                 id = id ?: UUID.randomUUID().toString(),
-                name = route::class.simpleName!!,
-                arguments = route,
+                name = target::class.simpleName!!,
+                arguments = target,
                 direction = direction,
                 content = navScreen.content,
             )
             val targetDestination = navDestinations.value.find { it.name == name }
+            //单列页面先移除旧的
             if (targetDestination != null && navScreen.isSingle) {
                 val targetIndex = navDestinations.value.indexOf(targetDestination)
                 navDestinations.update { it.take(targetIndex) }
@@ -180,6 +189,22 @@ class NavGraphViewModel(
         }
     }
 
+    //保存数据方法
+    private fun setNavControllerSavaDataFunc() {
+        navController?.setSaveDataFunc { data ->
+            viewModelScope.launch {
+                Log.e("TAG", "setNavControllerSavaDataFunc: emit", )
+                destData.emit(data)
+            }
+        }
+    }
+
+    //获取数据方法
+    private fun setNavControllerGetSavaDataFunc() {
+        navController?.setGetSaveDataFunc {
+            destData
+        }
+    }
 
     companion object {
         fun providerFactory(
@@ -221,13 +246,26 @@ class ScreenBuilder() {
 
 class NavController {
 
-    private var navigateFun: ((RouteWithArgs, DirectionType, Boolean) -> Unit)? = null
+    private var navigateFun: ((RouteWithArgs, RouteWithArgs?, DirectionType, Boolean) -> Unit)? =
+        null
 
     private var popBackFun: ((RouteWithArgs?) -> Boolean)? = null
 
+    private var saveDataFun: ((String) -> Unit)? = null
+
+    private var getSaveDataFun: (() -> Flow<String?>)? = null
+
     var popBackDestFun: ((String) -> Boolean)? = null
 
-    fun setNavigateFunc(navigateFun: (RouteWithArgs, DirectionType, Boolean) -> Unit) {
+    fun setGetSaveDataFunc(getSaveDataFun: () -> Flow<String?>) {
+        this.getSaveDataFun = getSaveDataFun
+    }
+
+    fun setSaveDataFunc(saveFun: (String) -> Unit) {
+        this.saveDataFun = saveFun
+    }
+
+    fun setNavigateFunc(navigateFun: (RouteWithArgs, RouteWithArgs?, DirectionType, Boolean) -> Unit) {
         this.navigateFun = navigateFun
     }
 
@@ -239,8 +277,20 @@ class NavController {
         this.popBackDestFun = popBackDestFun
     }
 
-    fun navigate(target: RouteWithArgs, restore: Boolean = false) {
-        navigateFun?.invoke(target, DirectionType.LEFT, restore)
+    fun navigate(
+        target: RouteWithArgs,
+        removeTarget: RouteWithArgs? = null,
+        restore: Boolean = false
+    ) {
+        navigateFun?.invoke(target, removeTarget, DirectionType.LEFT, restore)
+    }
+
+    fun saveData(data: String) {
+        saveDataFun?.invoke(data)
+    }
+
+    fun getSaveData(): Flow<String?>? {
+        return getSaveDataFun?.invoke()
     }
 
     fun popBack(target: RouteWithArgs? = null): Boolean {
@@ -251,3 +301,4 @@ class NavController {
         return popBackDestFun?.invoke(T::class.java.simpleName) == true
     }
 }
+
