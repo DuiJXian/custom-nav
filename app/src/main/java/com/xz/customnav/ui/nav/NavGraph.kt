@@ -33,11 +33,9 @@ data class NavScreen(
 
 data class NavDestination(
     val id: String = UUID.randomUUID().toString(),
-    val createTime: String = System.currentTimeMillis().toString(),
     val name: String,
     val direction: DirectionType = DirectionType.LEFT,
     val arguments: RouteWithArgs? = null,
-    val viewModelStore: ViewModelStore = ViewModelStore(),
     val content: @Composable (RouteWithArgs?) -> Unit
 )
 
@@ -69,15 +67,6 @@ fun ScreenEntrance(navGraph: NavGraphViewModel, navController: NavController) {
             }
 
         }
-    }
-    val viewModelStoreOwner =
-        remember(currentDestination.id + "-" + currentDestination.viewModelStore) {
-            CustomViewModelStoreOwner(currentDestination.viewModelStore)
-        }
-    CompositionLocalProvider(
-        LocalViewModelStoreOwner provides viewModelStoreOwner
-    ) {
-        AnimateDestination(destination = currentDestination)
     }
 }
 
@@ -155,9 +144,6 @@ class NavGraphViewModel(
             val targetDestination = navDestinations.value.find { it.name == name }
             if (targetDestination != null && navScreen.isSingle) {
                 val targetIndex = navDestinations.value.indexOf(targetDestination)
-                navDestinations.value.subList(targetIndex, navDestinations.value.size).forEach {
-                    it.viewModelStore.clear()
-                }
                 navDestinations.update { it.take(targetIndex) }
             }
             navDestinations.update { it + listOf(destination) }
@@ -172,7 +158,6 @@ class NavGraphViewModel(
             val size = value.size
             if (value.size >= 2) {
                 val lastPreRoute = value[size - 2]
-                value.last().viewModelStore.clear()
                 navDestinations.update { it.take(it.size - 1) }
                 _currentDestination.update { lastPreRoute.copy(direction = DirectionType.RIGHT) }
             }
@@ -189,9 +174,6 @@ class NavGraphViewModel(
                 throw IllegalArgumentException("找不到$name")
             }
             val targetIndex = value.indexOf(target)
-            value.subList(targetIndex + 1, value.size).forEach {
-                it.viewModelStore.clear()
-            }
             navDestinations.update { it.subList(0, targetIndex + 1) }
             _currentDestination.update { target }
             navDestinations.value.size == 1
