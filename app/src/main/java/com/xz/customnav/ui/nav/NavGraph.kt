@@ -120,6 +120,7 @@ class NavGraphViewModel(
         this.navController = navController
         setNavControllerNavigateFunc()
         setNavControllerPopBackFunc()
+        setNavControllerPopBackDescFunc()
     }
 
     //设定导航构建者方法
@@ -166,31 +167,34 @@ class NavGraphViewModel(
 
     //回退方法
     private fun setNavControllerPopBackFunc() {
-        navController?.setPopBackFunc { target ->
-            val size = navDestinations.value.size
+        navController?.setPopBackFunc {
             val value = navDestinations.value
-            if (target != null) {
-                val targetName = target::class.simpleName!!
-                val destination = value.find { it.name == targetName }
-                val targetIndex = value.indexOf(destination)
-                if (destination == null) {
-                    throw IllegalArgumentException("找不到$targetName")
-                }
-                value.subList(targetIndex + 1, value.size).forEach {
-                    it.viewModelStore.clear()
-                }
-                navDestinations.update { it.subList(0, targetIndex) }
-                _currentDestination.update { destination }
-            } else {
-                if (value.size >= 2) {
-                    val lastPreRoute = value[size - 2]
-                    value.last().viewModelStore.clear()
-                    navDestinations.update { it.take(it.size - 1) }
-                    _currentDestination.update { lastPreRoute.copy(direction = DirectionType.RIGHT) }
-                }
+            val size = value.size
+            if (value.size >= 2) {
+                val lastPreRoute = value[size - 2]
+                value.last().viewModelStore.clear()
+                navDestinations.update { it.take(it.size - 1) }
+                _currentDestination.update { lastPreRoute.copy(direction = DirectionType.RIGHT) }
             }
-
             size == 1
+        }
+    }
+
+    //回退指定页面方法
+    private fun setNavControllerPopBackDescFunc() {
+        navController?.setPopDestBackFunc { name ->
+            val value = navDestinations.value
+            val target = navDestinations.value.find { it.name == name }
+            if (target == null) {
+                throw IllegalArgumentException("找不到$name")
+            }
+            val targetIndex = value.indexOf(target)
+            value.subList(targetIndex + 1, value.size).forEach {
+                it.viewModelStore.clear()
+            }
+            navDestinations.update { it.subList(0, targetIndex + 1) }
+            _currentDestination.update { target }
+            navDestinations.value.size == 1
         }
     }
 
@@ -239,6 +243,8 @@ class NavController {
 
     private var popBackFun: ((RouteWithArgs?) -> Boolean)? = null
 
+    var popBackDestFun: ((String) -> Boolean)? = null
+
     fun setNavigateFunc(navigateFun: (RouteWithArgs, DirectionType, Boolean) -> Unit) {
         this.navigateFun = navigateFun
     }
@@ -247,11 +253,19 @@ class NavController {
         this.popBackFun = popBackFun
     }
 
+    fun setPopDestBackFunc(popBackDestFun: (String) -> Boolean) {
+        this.popBackDestFun = popBackDestFun
+    }
+
     fun navigate(target: RouteWithArgs, restore: Boolean = false) {
         navigateFun?.invoke(target, DirectionType.LEFT, restore)
     }
 
     fun popBack(target: RouteWithArgs? = null): Boolean {
         return popBackFun?.invoke(target) == true
+    }
+
+    inline fun <reified T : RouteWithArgs> popBackDest(): Boolean {
+        return popBackDestFun?.invoke(T::class.java.simpleName) == true
     }
 }

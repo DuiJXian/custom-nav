@@ -36,5 +36,5 @@ CreateNavGraph(
 ```kotlin
 navController.navigate(MyRoutes.ArticleDetail(article)) // 跳转（默认左进右出）
 navController.popBack()                                // 回退一层
-navController.popBack(MyRoutes.ArticleList)  
+navController.popBackDest<MyRoutes.ArticleList>()      // 回退到指定页面
 ```

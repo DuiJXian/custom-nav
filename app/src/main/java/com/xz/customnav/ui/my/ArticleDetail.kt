@@ -56,7 +56,12 @@ fun ArticleDetailScreen(article: Article, navController: NavController) {
             Button(onClick = {
                 navController.navigate(MyRoutes.ArticleDetail(getArticles().last()))
             }) {
-                Text("Last")
+                Text("Navigate Last")
+            }
+            Button(onClick = {
+                navController.popBackDest<MyRoutes.ArticleList>()
+            }) {
+                Text("Pop back List")
             }
             Text(article.title, style = MaterialTheme.typography.titleLarge)
 

@@ -40,6 +40,7 @@ fun ArticleListScreen(navController: NavController) {
             Box(Modifier
                 .padding(5.dp)
                 .clickable {
+                    navController.popBack()
                     navController.navigate(MyRoutes.ArticleDetail(it), true)
                 }) {
                 TextImageCard(it.title, it.imageUrl)
